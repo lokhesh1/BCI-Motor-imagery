@@ -1,0 +1,11 @@
+EEG Epoch 
+   ↓
+Convolution layers (CNN)
+   ↓
+Feature maps (spatial features)
+   ↓
+Recurrent layers (RNN, LSTM, or GRU)
+   ↓
+Temporal dependencies
+   ↓
+Classification (e.g., ERP type)
