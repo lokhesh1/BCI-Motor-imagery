@@ -15,16 +15,12 @@ class ChannelAttention(nn.Module):
         )
 
     def forward(self, x):
-
-        channel_avg = torch.mean(x, dim=2, keepdim=True)  # (batch_size, 1, 1, channels)
-        channel_max, _ = torch.max(x, dim=2, keepdim=True) # (batch_size, 1, 1, channels)
-
-        combined = channel_avg + channel_max  # (batch_size, 1, 1, channels)
-        combined = combined.squeeze(1).squeeze(1)  # (batch_size, channels)
-
+        channel_avg = torch.mean(x, dim=2, keepdim=True)  
+        channel_max, _ = torch.max(x, dim=2, keepdim=True) 
+        combined = channel_avg + channel_max  
+        combined = combined.squeeze(2)
         attention = self.mlp(combined)  # (batch_size, channels)
-        attention = torch.sigmoid(attention).unsqueeze(1).unsqueeze(2)  # (batch_size, 1, 1, channels)
-
+        attention = torch.sigmoid(attention).unsqueeze(2) # (batch_size, 1, 1, channels)
         attended_x = x * attention
         return attended_x, attention.squeeze()
 
@@ -45,6 +41,7 @@ class LearnableSTFT(nn.Module):
         self.window = nn.Parameter(initial_window)
 
         dft_matrix = self._create_dft_matrix(self.dft_size, self.window_size)
+        
         self.register_buffer('dft_matrix', dft_matrix)
 
     def _create_dft_matrix(self, dft_size, window_size):
@@ -57,9 +54,7 @@ class LearnableSTFT(nn.Module):
 
         # Use Euler's formula to create the complex matrix
         # e^(j*angle) = cos(angle) + j*sin(angle)
-        print('aa')
         dft_matrix = torch.complex(torch.cos(angle), torch.sin(angle))
-
         return dft_matrix
 
     def forward(self, signal):
@@ -68,14 +63,11 @@ class LearnableSTFT(nn.Module):
             signal = signal.unsqueeze(0).unsqueeze(0) # [1, 1, T]
         elif signal.dim() == 2:
             signal = signal.unsqueeze(1) # [B, 1, T]
-
-        
         batch_size, num_channels, num_samples = signal.shape
 
         signal_reshaped = signal.reshape(batch_size * num_channels, num_samples)
 
         learnable_window = self.window
-
         frames = signal_reshaped.unfold(dimension=1, size=self.window_size, step=self.hop_size)
 
         num_frames_unfolded = frames.shape[1]
@@ -92,9 +84,7 @@ class LearnableSTFT(nn.Module):
         windowed_frames_reshaped = windowed_frames.reshape(BC * F, W)
 
         windowed_frames_complex = windowed_frames_reshaped.to(self.dft_matrix.dtype)
-
         stft_result_reshaped = self.dft_matrix @ windowed_frames_complex.T
-        print("b")
         stft_result = stft_result_reshaped.T.reshape(batch_size, num_channels, F, self.dft_size)
 
         return stft_result
@@ -178,7 +168,7 @@ class EEGClassifier(nn.Module):
         
         self.attention_module = Attention4D(
             in_channels=22,
-            time_frames=17,
+            time_frames=14,
             freq_bins=250,
             d_model=128,
             n_heads=8
@@ -191,6 +181,22 @@ class EEGClassifier(nn.Module):
         x = self.learnable_stft(x)
         x = torch.abs(x)
         x = self.attention_module(x)
-        X = self.classifier(x)
+        x = self.classifier(x)
 
         return x
+    
+    
+if __name__ == '__main__':
+
+    signal_length = 1751 # e.g., 1 second of audio at 16kHz
+    batch_size = 4
+    num_channels = 22
+
+    dummy_input = torch.randn(batch_size, num_channels, signal_length)
+    print(f"Initial input shape: {dummy_input.shape}\n")
+    attention_module = EEGClassifier(num_classes=4)
+
+    output = attention_module(dummy_input)
+
+    print("--- Model Output ---")
+    print(f"Final output shape: {output.shape}")
